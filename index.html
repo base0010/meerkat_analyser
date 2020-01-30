@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<title>Meerkat Analyser</title>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+	<link type="text/css" rel="stylesheet" href="main.css">
+	<style>
+		#info {
+			background-color: rgba(0,0,0,0.75);
+		}
+
+		.dg .folder .gui-stats {
+			height: auto;
+		}
+	</style>
+</head>
+<body>
+
+	<div id="container"></div>
+	<script src ="./socket.io.js">
+	</script>
+	<script type="module">
+		import * as THREE from './build/three.module.js';
+
+		import Stats from './jsm/libs/stats.module.js';
+		import { GUI } from './jsm/libs/dat.gui.module.js';
+
+		import { OrbitControls } from './jsm/controls/OrbitControls.js';
+		import { BufferGeometryUtils } from './jsm/utils/BufferGeometryUtils.js';
+		import { STLLoader } from './jsm/loaders/STLLoader.js';
+		var container, stats, gui, guiStatsEl;
+		var camera, controls, scene, renderer, material;
+		let mouse = new THREE.Vector2(), INTERSECTED;
+		let raycaster = new THREE.Raycaster()
+
+		// gui
+
+		var Method = {
+			INSTANCED: 'INSTANCED',
+			MERGED: 'MERGED',
+			NAIVE: 'NAIVE'
+		};
+
+
+		var api = {
+			method: Method.INSTANCED,
+			count: 1000,
+			getAccountsInBlock: "block number"
+
+		};
+
+		//
+		init();
+		initMesh();
+		animate();
+		let mkCount = 100;
+		let socket = io('localhost:3000')
+
+		let aNames = []
+		//todo:api a bit hacky
+		socket.on('returnAllAccounts',function (a) {
+			mkCount = a[0].length
+			a[0].map((i)=>{
+				aNames.push(i.rName)
+			})
+
+			console.log(`got ${aNames.length} accounts across all blocks`)
+			initMesh()
+
+		})
+
+		socket.on('returnAccountsInBlock',function(a){
+			mkCount = a[0].cnt
+			console.log(`got ${a[0].cnt} accounts in block`)
+
+			initMesh()
+
+		})
+
+		socket.on('connect', function () {
+			console.log('connected')
+			socket.emit('allAccounts')
+
+		})
+
+		//
+		function clean() {
+
+			var meshes = [];
+
+			scene.traverse( function ( object ) {
+
+				if ( object.isMesh ) meshes.push( object );
+
+			} );
+
+			for ( var i = 0; i < meshes.length; i ++ ) {
+
+				var mesh = meshes[ i ];
+				mesh.material.dispose();
+				mesh.geometry.dispose();
+
+				scene.remove( mesh );
+
+			}
+
+		}
+
+		var randomizeMatrix = function () {
+
+			var position = new THREE.Vector3();
+			var rotation = new THREE.Euler();
+			var quaternion = new THREE.Quaternion();
+			var scale = new THREE.Vector3();
+
+			return function ( matrix ) {
+
+				position.x = Math.random() * 40 - 20;
+				position.y = Math.random() * 40 - 20;
+				position.z = Math.random() * 40 - 20;
+
+				rotation.x = Math.random() * 2 * Math.PI;
+				rotation.y = Math.random() * 2 * Math.PI;
+				rotation.z = Math.random() * 2 * Math.PI;
+
+				quaternion.setFromEuler( rotation );
+
+				scale.x = scale.y = scale.z = Math.random() * 1;
+
+				matrix.compose( position, quaternion, scale );
+
+			};
+
+		}();
+
+		function initMesh() {
+
+			clean();
+
+			// make instances
+			var loader = new STLLoader();
+			loader.load( './decimated_meerkat.stl', function ( geometry ) {
+
+				material = new THREE.MeshNormalMaterial();
+
+
+				// geometry.computeVertexNormals();
+
+					console.time( api.method + ' (build)'  );
+
+					switch ( api.method ) {
+
+						case Method.INSTANCED:
+							makeInstanced( geometry );
+							break;
+
+						case Method.MERGED:
+							makeMerged( geometry );
+							break;
+
+						case Method.NAIVE:
+							makeNaive( geometry );
+							break;
+
+					}
+
+					console.timeEnd( api.method + ' (build)' );
+
+			} );
+
+		}
+
+		function makeInstanced( geometry ) {
+
+
+			var matrix = new THREE.Matrix4();
+			var mesh = new THREE.InstancedMesh( geometry, material, mkCount );
+
+			for ( var i = 0; i < api.count; i ++ ) {
+
+				randomizeMatrix( matrix );
+				mesh.setMatrixAt( i, matrix );
+
+			}
+
+			scene.add( mesh );
+			//**Failed attempt to get text to render **
+
+			// var loader = new THREE.FontLoader();
+			//
+			// loader.load( 'fonts/hvb.typeface.json', function ( font ) {
+			//
+			// 	var textGeo = new THREE.TextGeometry( "BlockNum", {
+			//
+			// 		font: font,
+			//
+			// 		size: 5,
+			// 		height: 5,
+			// 		curveSegments: 12,
+			//
+			// 		bevelThickness: 2,
+			// 		bevelSize: 5,
+			// 		bevelEnabled: true
+			//
+			// 	} );
+			//
+			// 	var textMaterial = new THREE.MeshPhongMaterial( { color: 0xff0000 } );
+			//
+			// 	var mesh = new THREE.Mesh( textGeo, textMaterial );
+			// 	mesh.position.set(1,1,1)
+			//
+			// 	scene.add( mesh );
+			//
+			// } );
+
+			//not using
+			guiStatsEl.innerHTML = [
+
+				'<i>GPU draw calls</i>: 1',
+				'<i>GPU memory</i>: ' + formatBytes( api.count * 16 + geometryByteLength, 2 )
+
+			].join( '<br/>' );
+
+		}
+
+
+
+		function init() {
+
+			var width = window.innerWidth;
+			var height = window.innerHeight;
+
+			// camera
+
+			camera = new THREE.PerspectiveCamera( 70, width / height, 1, 100 );
+			camera.position.z = 30;
+
+			// renderer
+
+			renderer = new THREE.WebGLRenderer( { antialias: false } );
+			renderer.setPixelRatio( window.devicePixelRatio );
+			renderer.setSize( width, height );
+			renderer.outputEncoding = THREE.sRGBEncoding;
+
+			container = document.getElementById( 'container' );
+			container.appendChild( renderer.domElement );
+
+
+
+
+			// scene
+
+			scene = new THREE.Scene();
+			// scene.background = new THREE.Color( "blue" );
+			const loader = new THREE.TextureLoader();
+			loader.load('./nearbg.png' , function(texture)
+			{
+				scene.background = texture;
+			});
+
+			// controls
+
+			controls = new OrbitControls( camera, renderer.domElement );
+			controls.autoRotate = true;
+
+			// stats
+
+			stats = new Stats();
+			container.appendChild( stats.dom );
+
+			// gui
+
+			gui = new GUI();
+
+			let getStudioAccounts = {"render studio accounts":function(){
+					let studioNames = aNames.filter(name=>name.includes("studio"))
+					console.log(`got ${studioNames.length} studio accounts`)
+					mkCount = studioNames.length
+					initMesh()
+				}}
+				let listStudioAccounts = {"list studio accounts":function(){
+						let studioNames = aNames.filter(name=>name.includes("studio"))
+						console.log(studioNames)
+				}}
+			gui.add(getStudioAccounts, "render studio accounts")
+			gui.add(listStudioAccounts, "list studio accounts")
+			gui.add(api, 'getAccountsInBlock').onFinishChange((a)=>{
+				socket.emit('accountsInBlock',a)
+			})
+
+
+			var perfFolder = gui.addFolder('Block Analyser Options');
+
+			guiStatsEl = document.createElement( 'li' );
+			guiStatsEl.classList.add( 'gui-stats' );
+
+
+			perfFolder.__ul.appendChild( guiStatsEl );
+
+			perfFolder.open();
+
+			// listeners
+
+
+
+			window.addEventListener( 'resize', onWindowResize, false );
+
+			Object.assign(window, {scene});
+
+
+			document.addEventListener( 'mousemove', onDocumentMouseMove, false );
+
+
+
+		}
+
+
+		function onDocumentMouseMove( event ) {
+
+			event.preventDefault();
+
+			mouse.x = ( event.clientX / window.innerWidth ) * 2 - 1;
+			mouse.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
+			// console.log("mousemoved")
+
+		}
+		//
+
+		function onWindowResize() {
+
+			var width = window.innerWidth;
+			var height = window.innerHeight;
+
+			camera.aspect = width / height;
+			camera.updateProjectionMatrix();
+
+			renderer.setSize( width, height );
+
+		}
+
+		function animate() {
+
+			requestAnimationFrame( animate );
+
+			controls.update();
+			stats.update();
+
+			render();
+
+		}
+
+		function render() {
+			raycaster.setFromCamera(mouse,camera)
+			//**failed attempt to get mouse selection working
+			// var intersects = raycaster.intersectObjects( scene.children );
+			// if ( intersects.length > 0 ) {
+			//
+			// 	if ( INTERSECTED != intersects[ 0 ].object ) {
+			//
+			// 		if ( INTERSECTED ) INTERSECTED.material.emissive.setHex( INTERSECTED.currentHex );
+			//
+			// 		INTERSECTED = intersects[ 0 ].object;
+			// 		// INTERSECTED.currentHex = INTERSECTED.material.emissive.getHex();
+			// 		// INTERSECTED.material.emissive.setHex( 0xff0000 );
+			//
+			// 	}
+			//
+			// } else {
+			//
+			// 	if ( INTERSECTED ) {
+			// 		// console.log(INTERSECTED)
+			// 		// INTERSECTED.name = "fuck"
+			// 	}
+			// 		// INTERSECTED.material.emissive.setHex( INTERSECTED.currentHex );
+			//
+			// 	INTERSECTED = null;
+			//
+			// }
+			renderer.render( scene, camera );
+
+		}
+
+	</script>
+
+</body>
+</html>
