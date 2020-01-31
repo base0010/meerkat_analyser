@@ -51,16 +51,23 @@
 		};
 
 		//
+		let mkCount = 0;
+
 		init();
 		initMesh();
 		animate();
-		let mkCount = 100;
+		let accountNum;
+
+
 		let socket = io('localhost:3000')
 
 		let aNames = []
 		//todo:api a bit hacky
 		socket.on('returnAllAccounts',function (a) {
 			mkCount = a[0].length
+
+			accountNum =  a[0].length
+
 			a[0].map((i)=>{
 				aNames.push(i.rName)
 			})
@@ -185,35 +192,6 @@
 			}
 
 			scene.add( mesh );
-			//**Failed attempt to get text to render **
-
-			// var loader = new THREE.FontLoader();
-			//
-			// loader.load( 'fonts/hvb.typeface.json', function ( font ) {
-			//
-			// 	var textGeo = new THREE.TextGeometry( "BlockNum", {
-			//
-			// 		font: font,
-			//
-			// 		size: 5,
-			// 		height: 5,
-			// 		curveSegments: 12,
-			//
-			// 		bevelThickness: 2,
-			// 		bevelSize: 5,
-			// 		bevelEnabled: true
-			//
-			// 	} );
-			//
-			// 	var textMaterial = new THREE.MeshPhongMaterial( { color: 0xff0000 } );
-			//
-			// 	var mesh = new THREE.Mesh( textGeo, textMaterial );
-			// 	mesh.position.set(1,1,1)
-			//
-			// 	scene.add( mesh );
-			//
-			// } );
-
 			//not using
 			guiStatsEl.innerHTML = [
 
@@ -247,8 +225,6 @@
 			container.appendChild( renderer.domElement );
 
 
-
-
 			// scene
 
 			scene = new THREE.Scene();
@@ -273,6 +249,7 @@
 
 			gui = new GUI();
 
+
 			let getStudioAccounts = {"render studio accounts":function(){
 					let studioNames = aNames.filter(name=>name.includes("studio"))
 					console.log(`got ${studioNames.length} studio accounts`)
@@ -283,11 +260,18 @@
 						let studioNames = aNames.filter(name=>name.includes("studio"))
 						console.log(studioNames)
 				}}
+
+
+
+
+
 			gui.add(getStudioAccounts, "render studio accounts")
 			gui.add(listStudioAccounts, "list studio accounts")
 			gui.add(api, 'getAccountsInBlock').onFinishChange((a)=>{
 				socket.emit('accountsInBlock',a)
 			})
+			gui.add(api,'count').listen()
+
 
 
 			var perfFolder = gui.addFolder('Block Analyser Options');
@@ -301,17 +285,11 @@
 			perfFolder.open();
 
 			// listeners
-
-
-
 			window.addEventListener( 'resize', onWindowResize, false );
 
 			Object.assign(window, {scene});
 
-
 			document.addEventListener( 'mousemove', onDocumentMouseMove, false );
-
-
 
 		}
 
@@ -319,10 +297,8 @@
 		function onDocumentMouseMove( event ) {
 
 			event.preventDefault();
+			api.count = mkCount
 
-			mouse.x = ( event.clientX / window.innerWidth ) * 2 - 1;
-			mouse.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
-			// console.log("mousemoved")
 
 		}
 		//
@@ -346,37 +322,13 @@
 			controls.update();
 			stats.update();
 
+
 			render();
 
 		}
 
 		function render() {
 			raycaster.setFromCamera(mouse,camera)
-			//**failed attempt to get mouse selection working
-			// var intersects = raycaster.intersectObjects( scene.children );
-			// if ( intersects.length > 0 ) {
-			//
-			// 	if ( INTERSECTED != intersects[ 0 ].object ) {
-			//
-			// 		if ( INTERSECTED ) INTERSECTED.material.emissive.setHex( INTERSECTED.currentHex );
-			//
-			// 		INTERSECTED = intersects[ 0 ].object;
-			// 		// INTERSECTED.currentHex = INTERSECTED.material.emissive.getHex();
-			// 		// INTERSECTED.material.emissive.setHex( 0xff0000 );
-			//
-			// 	}
-			//
-			// } else {
-			//
-			// 	if ( INTERSECTED ) {
-			// 		// console.log(INTERSECTED)
-			// 		// INTERSECTED.name = "fuck"
-			// 	}
-			// 		// INTERSECTED.material.emissive.setHex( INTERSECTED.currentHex );
-			//
-			// 	INTERSECTED = null;
-			//
-			// }
 			renderer.render( scene, camera );
 
 		}
