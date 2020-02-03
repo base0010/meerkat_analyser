@@ -45,29 +45,28 @@
 
 		var api = {
 			method: Method.INSTANCED,
-			count: 1000,
+			count: 0,
 			getAccountsInBlock: "block number"
 
 		};
 
 		//
-		let mkCount = 0;
+		let meerkatCount = 0;
+		let displayStudioAccounts = false;
 
 		init();
 		initMesh();
 		animate();
-		let accountNum;
 
 
-		let socket = io('localhost:3000')
+
+		let socket = io('gatekeeper.network:3000')
 
 		let aNames = []
 		//todo:api a bit hacky
 		socket.on('returnAllAccounts',function (a) {
-			mkCount = a[0].length
-
-			accountNum =  a[0].length
-
+			meerkatCount = a[0].length
+			aNames.length = 0
 			a[0].map((i)=>{
 				aNames.push(i.rName)
 			})
@@ -78,10 +77,9 @@
 		})
 
 		socket.on('returnAccountsInBlock',function(a){
-			mkCount = a[0].cnt
+			meerkatCount = a[0].cnt
 			console.log(`got ${a[0].cnt} accounts in block`)
-
-			initMesh()
+			return initMesh()
 
 		})
 
@@ -99,6 +97,7 @@
 			scene.traverse( function ( object ) {
 
 				if ( object.isMesh ) meshes.push( object );
+
 
 			} );
 
@@ -126,6 +125,9 @@
 				position.x = Math.random() * 40 - 20;
 				position.y = Math.random() * 40 - 20;
 				position.z = Math.random() * 40 - 20;
+				// position.x = 2
+				// position.y = 2
+				// position.z = 2
 
 				rotation.x = Math.random() * 2 * Math.PI;
 				rotation.y = Math.random() * 2 * Math.PI;
@@ -151,26 +153,24 @@
 
 				material = new THREE.MeshNormalMaterial();
 
+				let accountNameList = aNames.flatMap((name) => {
+					return '<li>' + name + '</li>'
+				})
+				if(displayStudioAccounts) {
+					accountNameList = accountNameList.filter(name=>name.includes("studio"))
+				}
 
-				// geometry.computeVertexNormals();
+				guiStatsEl.innerHTML = [
+
+					'<i>Accounts on Screen</i>:' + (meerkatCount),
+					'<ul>'+ (accountNameList.toString()) +
+					'</ul>',
+
+				].join( '<br/>' );
+
 
 					console.time( api.method + ' (build)'  );
-
-					switch ( api.method ) {
-
-						case Method.INSTANCED:
-							makeInstanced( geometry );
-							break;
-
-						case Method.MERGED:
-							makeMerged( geometry );
-							break;
-
-						case Method.NAIVE:
-							makeNaive( geometry );
-							break;
-
-					}
+					makeInstanced( geometry );
 
 					console.timeEnd( api.method + ' (build)' );
 
@@ -178,27 +178,32 @@
 
 		}
 
+
 		function makeInstanced( geometry ) {
-
-
+			// aNames.length = 0
 			var matrix = new THREE.Matrix4();
-			var mesh = new THREE.InstancedMesh( geometry, material, mkCount );
+			var mesh = new THREE.InstancedMesh( geometry, material, meerkatCount );
+			geometry.computeVertexNormals();
+			let scale = 1
+			geometry.scale( scale,scale,scale )
+			geometry.boundingSphere = new THREE.Sphere( new THREE.Vector3(), 10000 );
 
-			for ( var i = 0; i < api.count; i ++ ) {
+			// camera.lookAt( 0, 0, 0 );
+			console.log(`rendering ${meerkatCount}`)
+
+
+			for ( var i = 0; i < meerkatCount; i ++ ) {
 
 				randomizeMatrix( matrix );
 				mesh.setMatrixAt( i, matrix );
 
 			}
 
+			// mesh.frustrumCulled = false
+			mesh.instanceMatrix.setUsage( THREE.DynamicDrawUsage ); // will be updated every frame
+
 			scene.add( mesh );
-			//not using
-			guiStatsEl.innerHTML = [
 
-				'<i>GPU draw calls</i>: 1',
-				'<i>GPU memory</i>: ' + formatBytes( api.count * 16 + geometryByteLength, 2 )
-
-			].join( '<br/>' );
 
 		}
 
@@ -211,14 +216,16 @@
 
 			// camera
 
-			camera = new THREE.PerspectiveCamera( 70, width / height, 1, 100 );
-			camera.position.z = 30;
+			camera = new THREE.PerspectiveCamera( 90, width / height, .0001, 1000000 );
+			camera.position.z = 40;
+
 
 			// renderer
 
 			renderer = new THREE.WebGLRenderer( { antialias: false } );
 			renderer.setPixelRatio( window.devicePixelRatio );
 			renderer.setSize( width, height );
+
 			renderer.outputEncoding = THREE.sRGBEncoding;
 
 			container = document.getElementById( 'container' );
@@ -237,7 +244,7 @@
 
 			// controls
 
-			controls = new OrbitControls( camera, renderer.domElement );
+			controls = new OrbitControls( camera, renderer.domElement);
 			controls.autoRotate = true;
 
 			// stats
@@ -251,30 +258,31 @@
 
 
 			let getStudioAccounts = {"render studio accounts":function(){
+					// aNames.length = 0
+					displayStudioAccounts = true
 					let studioNames = aNames.filter(name=>name.includes("studio"))
-					console.log(`got ${studioNames.length} studio accounts`)
-					mkCount = studioNames.length
+					meerkatCount = studioNames.length
 					initMesh()
 				}}
-				let listStudioAccounts = {"list studio accounts":function(){
-						let studioNames = aNames.filter(name=>name.includes("studio"))
-						console.log(studioNames)
+			let renderAllAccounts = {"render all accounts":function(){
+					displayStudioAccounts = false
+
+					console.log(`got ${aNames.length} studio accounts`)
+					meerkatCount = aNames.length
+					initMesh()
 				}}
 
 
-
-
+			gui.add(renderAllAccounts, "render all accounts")
 
 			gui.add(getStudioAccounts, "render studio accounts")
-			gui.add(listStudioAccounts, "list studio accounts")
+			// gui.add(listStudioAccounts, "list studio accounts")
 			gui.add(api, 'getAccountsInBlock').onFinishChange((a)=>{
 				socket.emit('accountsInBlock',a)
 			})
-			gui.add(api,'count').listen()
+		
 
-
-
-			var perfFolder = gui.addFolder('Block Analyser Options');
+			var perfFolder = gui.addFolder('Account Details');
 
 			guiStatsEl = document.createElement( 'li' );
 			guiStatsEl.classList.add( 'gui-stats' );
@@ -282,7 +290,7 @@
 
 			perfFolder.__ul.appendChild( guiStatsEl );
 
-			perfFolder.open();
+			// perfFolder.open();
 
 			// listeners
 			window.addEventListener( 'resize', onWindowResize, false );
@@ -299,7 +307,7 @@
 		function onDocumentMouseMove( event ) {
 
 			event.preventDefault();
-			api.count = mkCount
+			api.count = meerkatCount
 
 
 		}
@@ -330,7 +338,6 @@
 		}
 
 		function render() {
-			raycaster.setFromCamera(mouse,camera)
 			renderer.render( scene, camera );
 
 		}
